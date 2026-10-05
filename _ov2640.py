@@ -12,21 +12,22 @@ _DATA_ADR = const(0x40010808)
 _CLK_ADR = const(0x40011008)
 
 _VSYNC = Pin('PC5', Pin.IN) # Change to C5 later
-_HREF = Pin('PB3', Pin.IN) # Timer 2 Ch2
-_DCLK = Pin('PA15', Pin.IN) # Timer 2 Ch1, has DMA
+_HREF = Pin('PA8', Pin.IN) # Timer 1 Ch1
+_DCLK = Pin('PA12', Pin.IN)
 
 
 # Timer all reference to Pin CLK
-_TIMER_ID = const(2)
-_TIMER_CH = const(0) # For DCLK
-_TIMER_BASE_ADDR = const(0x40000000)
-_GATE_CH = const(2) # For HREF
+_TIMER_ID = const(1)
+_TIMER_CH = const(2) # For DCLK, Indicates the CHANNEL which will trigger dma
+_TIMER_BASE_ADDR = const(0x40012C00)
+_GATE_CH = const(1) # For HREF
 
 # Timer Reg
 _TIMER_DIER = const(_TIMER_BASE_ADDR + 0x0C)
 _TIMER_SMCR = const(_TIMER_BASE_ADDR + 0x08)
 _TIMER_SR = const(_TIMER_BASE_ADDR + 0x10)
 _TIMER_CR1 = const(_TIMER_BASE_ADDR + 0x00)
+_TIMER_CR2 = const(_TIMER_BASE_ADDR + 0x04)
 _TIMER_EGR = const(_TIMER_BASE_ADDR + 0x14)
 _TIMER_CNT = const(_TIMER_BASE_ADDR + 0x24)
 _TIMER_ARR = const(_TIMER_BASE_ADDR + 0x2C)
@@ -35,7 +36,6 @@ _TIMER_RCR = const(_TIMER_BASE_ADDR + 0x30)
 # Timer Cosnt
 _DMA_CH_ENABLE = const(1 << (8 + _TIMER_CH)) # From docs, bit 9 enables DMA request
 
-
 # DMA
 _DMA_BASE = const(0x40020000)
 
@@ -43,7 +43,7 @@ _DMA_BASE = const(0x40020000)
 # Namings are wrong. ignore first
 # Search Datasheet to find Channel => DMA
 # E.g. DMA Channel 5  - TIM4_CH3
-_DMA_CH = const(2) # TIM2_UP is CH2
+_DMA_CH = const(3) # TIM1_CH2 is DMA_CH3
 
 _DMA_CCR   = const(_DMA_BASE + 0x08 + 20 * (_DMA_CH - 1))
 _DMA_CNDTR = const(_DMA_BASE + 0x0C + 20 * (_DMA_CH - 1))
@@ -119,9 +119,10 @@ class Camera:
         self.dropped_frames = 0
         
         # No ESR
+        print('ini')
         self._init_gate()
         self._init_dma()
-        self._remap_pins()
+        # self._remap_pins()
 
 #         print("DIER :", hex(mem32[0x4000080C]))
 #         print("SR   :", hex(mem32[0x40000810]))
@@ -192,7 +193,7 @@ class Camera:
 
         # HREF = hardware gate
         smcr |= 0b101               # SMS = gated mode
-        smcr |= 0b110 << 4          # TS = TI1FP1
+        smcr |= 0b101 << 4          # TS = TI1FP1
 
         # DCLK = external counter clock
         smcr |= 1 << 14             # ECE = External Clock Mode 2
@@ -204,7 +205,7 @@ class Camera:
         mem32[_TIMER_SMCR] = smcr
 
         # Important for TIM1 advanced timer
-        # mem32[_TIMER_RCR] = 0
+        mem32[_TIMER_RCR] = 0
 
         # We want update on every accepted ETR count
         mem32[_TIMER_ARR] = 0
@@ -218,6 +219,9 @@ class Camera:
 
         # Start TIM1
         mem32[_TIMER_CR1] |= 1
+        
+        # Rerouet dma to channel {DCLK_Channel}
+        mem32[_TIMER_CR2] |= 1 << 3
     
             
         
@@ -534,7 +538,6 @@ class Camera:
             "\r\n"
         ).encode()
         frame_count = 0
-        
         while True:
             gc.collect()
             frame_complete = False
@@ -544,12 +547,11 @@ class Camera:
             # print("GC Collect time:", time.ticks_diff(time.ticks_us(), t_gc))
             # t1 = time.ticks_us()
             
-            
             # Synchronise to new frame
             self._wait_vsync()
-           
             header_complete = False
-            # Start draining a fame     
+            # Start draining a fame
+
             while not frame_complete:
                 result = self._drain_image(section)
                 # Select section[x] frame
@@ -646,3 +648,5 @@ class Camera:
             msg = msg.decode("utf-8")
         print("[Camera]" +msg)
             
+
+
