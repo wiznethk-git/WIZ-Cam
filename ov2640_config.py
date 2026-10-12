@@ -30,11 +30,10 @@ WB_MODE = (
 )
 
 EFFECT_VAL = (
-    b'\x00\x00'  # None
     b'\x40\xa6'  # Antique
     b'\xa0\x40'  # Bluish
     b'\x40\x40'  # Greenish
-    b'\x40\xc0'  # Reffish
+    b'\x40\xc0'  # Reddish
 )
 
 

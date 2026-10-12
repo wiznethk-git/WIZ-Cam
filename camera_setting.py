@@ -1,5 +1,5 @@
 from ov2640_config import *
-from ov2640_regs import RESOLUTION_TABLE
+from ov2640_regs import *
 
 def _set_bool_register(camera, enable, label, bank, register, mask, set_on_enable=True):
     if not isinstance(enable, bool):
@@ -77,8 +77,11 @@ def set_resolution(camera, h, w):
     if table is None:
         camera.log("No resolution for {}x{}.".format(h, w))
         return
-
+    camera.reset()
+    camera.write_table(OV2640_JPEG_INIT)
+    camera.write_table(OV2640_JPEG)
     camera.write_table(table)
+    camera.write_table(OV2640_SYS_INIT)
 
 
 def set_vertical_flip(camera, flip):
@@ -292,17 +295,26 @@ def set_special_effect(camera, effect):
             )
         )
         return
-    if effect < 0 or effect > 3:
+    if effect < 0 or effect > 4:
         camera.log(f"special effect only allow (0-4), recevied {effect}")
         return
-    idx = effect * 2
-    ef_val_0, ef_val_1 = EFFECT_VAL[idx:idx + 2]
-    camera.write_reg(0xff, 0x00)
-    camera.write_reg(0x7c, 0x00)
-    camera.write_reg(0x7d, 0x18)
-    camera.write_reg(0x7c, 0x05)
-    camera.write_reg(0x7d, ef_val_0)
-    camera.write_reg(0x7d, ef_val_1)
+    
+    if effect == 0:
+        # Return normal
+        camera.write_reg(0xff, 0x00)
+        camera.write_reg(0x7C, 0x00)
+        camera.write_reg(0x7D, 0x00)
+        camera.write_reg(0x7C, 0x05)
+        camera.write_reg(0x7D, 0x80)
+    else:
+        idx = (effect - 1) * 2
+        ef_val_0, ef_val_1 = EFFECT_VAL[idx:idx + 2]
+        camera.write_reg(0xff, 0x00)
+        camera.write_reg(0x7c, 0x00)
+        camera.write_reg(0x7d, 0x18)
+        camera.write_reg(0x7c, 0x05)
+        camera.write_reg(0x7d, ef_val_0)
+        camera.write_reg(0x7d, ef_val_1)
     
 
 def set_awb_mode(camera, enable):

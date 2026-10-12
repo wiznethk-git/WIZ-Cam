@@ -591,9 +591,19 @@ class Camera:
                     # Frame ended
                     start = (section - 1) * q
                     end = self.max_size - mem32[_DMA_CNDTR]
+
+                    if section == 1 and not header_complete:
+                        if end < 2 or self.buf[0] != 0xFF or self.buf[1] != 0xD8:
+                            self.dropped_frames += 1
+                            frame_complete = True
+                            break
+
+                        self._write_all(sock, header)
+                        header_complete = True
+
                     if end > start:
                         self._write_all(sock, self.mv[start:end])
-                    # self.benchmark.append(time.ticks_diff(time.ticks_us(), t1))
+
                     frame_complete = True
                     frame_count += 1
                     if frame is not None:
