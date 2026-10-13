@@ -78,11 +78,13 @@ def set_resolution(camera, h, w):
         camera.log("No resolution for {}x{}.".format(h, w))
         return
     camera.reset()
+    # camera.write_reg(0xff, 0x00)
+    # camera.write_reg(0xe0,0x04)
     camera.write_table(OV2640_JPEG_INIT)
     camera.write_table(OV2640_JPEG)
     camera.write_table(table)
     camera.write_table(OV2640_SYS_INIT)
-
+    
 
 def set_vertical_flip(camera, flip):
     _set_bool_register(camera, flip, "Vertical flip", 0x01, 0x04, 0x50)

@@ -40,10 +40,7 @@ cam = Camera(
     max_size = 28000
 )
 
-sock = socket.socket()
-sock.bind((nic.ifconfig()[0], PORT))
-sock.listen(1)
-sock.setblocking(True)
+
 print(f"\nPlease connect to {nic.ifconfig()[0]}:{PORT} for the camera")
 
 # Do here
@@ -67,10 +64,15 @@ cam.write_table(OV2640_SVGA_800X600)
 cam.write_table(OV2640_SYS_INIT)
 while True:
     try:
+        sock = socket.socket()
+        sock.bind((nic.ifconfig()[0], PORT))
+        sock.listen(0)
+        sock.setblocking(True)
         conn, addr = sock.accept()
+        sock = None
         
         # conn.setblocking(False)
-        conn.settimeout(5)
+        conn.settimeout(5000)
 
 
 
@@ -94,6 +96,7 @@ while True:
       
         # asyncio.run(asyncio.gather(server.run(),cam.async_stream_frame(conn)))
     except OSError as e:
+        print(e)
         if conn is not None:
             try:
                 conn.close()
@@ -103,10 +106,11 @@ while True:
             print("\nConnection ended. Reconnect again.")
         if server is not None:
             server.disconnect()
-#         if e.errno not in [7, 128]:
-#             raise e
+        if e.errno not in [7, 128]:
+            raise e
         continue
     except Exception as e:
+        print(e)
         if conn is not None:
             try:
                 conn.close()
@@ -115,7 +119,7 @@ while True:
                 pass
         if server is not None:
             server.disconnect()
-#         raise e
+        raise e
     finally:
         print("advanced:",cam.advanced)
         if len(cam.benchmark) > 0:
