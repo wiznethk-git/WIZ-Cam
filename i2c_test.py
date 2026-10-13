@@ -37,6 +37,7 @@ Camera = load_driver(DRIVER)
 cam = Camera(
     scl = Pin('PB6', Pin.IN),
     sda = Pin('PB7', Pin.IN),
+    max_size = 28000
 )
 
 sock = socket.socket()
@@ -47,31 +48,31 @@ print(f"\nPlease connect to {nic.ifconfig()[0]}:{PORT} for the camera")
 
 # Do here
 server = CommandServer(nic.ifconfig()[0], cam)
+cam.reset()
+# cam.init_sequence()
 
+# JPEG init
+cam.write_table(OV2640_JPEG_INIT)
+cam.write_table(OV2640_JPEG)
+
+# Resolution Init
+# cam.write_table(OV2640_CIF_176X144)
+# cam.write_table(OV2640_CIF_320X240)
+cam.write_table(OV2640_SVGA_800X600)
+# cam.write_table(OV2640_VGA_640X480)
+# cam.write_table(OV2640_UXGA_1024X768)
+# cam.write_table(OV2640_UXGA_1280X960)
+
+# Apply common sensor/DVP timing after the selected resolution.
+cam.write_table(OV2640_SYS_INIT)
 while True:
     try:
         conn, addr = sock.accept()
         
-        conn.setblocking(False)
-        conn.settimeout(0.1)
+        # conn.setblocking(False)
+        conn.settimeout(5)
 
-        cam.reset()
-        # cam.init_sequence()
-        
-        # JPEG init
-        cam.write_table(OV2640_JPEG_INIT)
-        cam.write_table(OV2640_JPEG)
-        
-        # Resolution Init
-        # cam.write_table(OV2640_CIF_176X144)
-        # cam.write_table(OV2640_CIF_320X240)
-        cam.write_table(OV2640_SVGA_800X600)
-        # cam.write_table(OV2640_VGA_640X480)
-        # cam.write_table(OV2640_UXGA_1024X768)
-        # cam.write_table(OV2640_UXGA_1280X960)
 
-        # Apply common sensor/DVP timing after the selected resolution.
-        cam.write_table(OV2640_SYS_INIT)
 
         # Extra settings
         # Table 00
@@ -102,8 +103,8 @@ while True:
             print("\nConnection ended. Reconnect again.")
         if server is not None:
             server.disconnect()
-        if e.errno not in [7, 128]:
-            raise e
+#         if e.errno not in [7, 128]:
+#             raise e
         continue
     except Exception as e:
         if conn is not None:
@@ -114,7 +115,7 @@ while True:
                 pass
         if server is not None:
             server.disconnect()
-        raise e
+#         raise e
     finally:
         print("advanced:",cam.advanced)
         if len(cam.benchmark) > 0:
@@ -133,3 +134,5 @@ while True:
         if server is not None:
             server.disconnect()
     
+
+

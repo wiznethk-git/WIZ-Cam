@@ -15,7 +15,6 @@ Regenerate with gen/convert_ov2640_regs.py.
 OV2640_SYS_INIT = (
     # DSP bank: DVP output-clock divider
     b'\xFF\x00'
-    b'\xD3\x16'
     b'\x2C\xFF'
     b'\x2E\xDF'
     b'\x00\x00'
@@ -24,6 +23,7 @@ OV2640_SYS_INIT = (
     # Sensor bank: internal clock doubler/divider and frame-length adjustment
     b'\xFF\x01'
     b'\x11\x80'
+    b'\x2B\x00'
     b'\x46\x55'
 )
 
@@ -63,6 +63,7 @@ OV2640_SVGA_800X600 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x12'
     b'\xE0\x04'
     b'\xC0\x64'
     b'\xC1\x4B'
@@ -114,6 +115,7 @@ OV2640_VGA_640X480 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x14'
     b'\xE0\x04'
     b'\xC0\x64'
     b'\xC1\x4B'
@@ -161,6 +163,7 @@ OV2640_UXGA_1280X960 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x18'
     b'\xE0\x04'
     b'\xC0\xC8'
     b'\xC1\x96'
@@ -208,6 +211,7 @@ OV2640_UXGA_1024X768 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x16'
     b'\xE0\x04'
     b'\xC0\xC8'
     b'\xC1\x96'
@@ -261,6 +265,7 @@ OV2640_CIF_320X240 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x12'
     b'\xE0\x04'
     b'\xC0\x32'
     b'\xC1\x25'
@@ -314,12 +319,13 @@ OV2640_CIF_176X144 = (
 
     # DSP bank
     b'\xFF\x00'
+    b'\xD3\x12'
     b'\xE0\x04'
     b'\xC0\x32'
     b'\xC1\x25'
     b'\x8C\x00'
     b'\x86\x35'
-    b'\x50\x80'
+    b'\x50\x89'
     b'\x51\x64'
     b'\x52\x4A'
     b'\x53\x00'
