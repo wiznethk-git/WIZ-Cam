@@ -60,7 +60,6 @@ OV2640_SVGA_800X600 = (
     b'\x0D\x87'
     b'\x0E\x41'
     b'\x4C\x00'
-
     # DSP bank
     b'\xFF\x00'
     b'\xD3\x12'
@@ -112,7 +111,6 @@ OV2640_VGA_640X480 = (
     b'\x0D\x87'
     b'\x0E\x41'
     b'\x4C\x00'
-
     # DSP bank
     b'\xFF\x00'
     b'\xD3\x14'
@@ -241,6 +239,9 @@ OV2640_CIF_320X240 = (
     b'\x18\x43'
     b'\x19\x00'
     b'\x1A\x25'
+    # CIF needs a brighter automatic-exposure stable region than JPEG_INIT.
+    b'\x24\x60'
+    b'\x25\x58'
     b'\x32\x09'
     b'\x37\xC0'
     b'\x4F\xCA'
@@ -260,8 +261,6 @@ OV2640_CIF_320X240 = (
     b'\x0D\x87'
     b'\x0E\x41'
     b'\x4C\x00'
-    b'\x24\x60'
-    b'\x25\x58'
 
     # DSP bank
     b'\xFF\x00'
@@ -295,6 +294,9 @@ OV2640_CIF_176X144 = (
     b'\x18\x43'
     b'\x19\x00'
     b'\x1A\x25'
+    # CIF needs a brighter automatic-exposure stable region than JPEG_INIT.
+    b'\x24\x60'
+    b'\x25\x58'
     b'\x32\x09'
     b'\x37\xC0'
     b'\x4F\xCA'
@@ -314,8 +316,6 @@ OV2640_CIF_176X144 = (
     b'\x0D\x87'
     b'\x0E\x41'
     b'\x4C\x00'
-    b'\x24\x60'
-    b'\x25\x58'
 
     # DSP bank
     b'\xFF\x00'

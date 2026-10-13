@@ -16,7 +16,7 @@ SATURATION_LEVEL = (
 
 AE_LEVEL = (
     b'\x20\x18\x60'
-    b'\x34\x1c\x70'
+    b'\x34\x1c\x00'
     b'\x3e\x38\x81'
     b'\x48\x40\x81'
     b'\x58\x50\x92'

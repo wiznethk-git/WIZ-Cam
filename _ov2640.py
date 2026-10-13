@@ -118,6 +118,37 @@ class Camera:
         self.advanced = 0
         self.dropped_frames = 0
         
+        # Settings
+        self.resolution = 0
+        # UI percentage; 50 maps to the sensor's neutral raw value 0x20.
+        self.brightness = 50
+        self.contrast = 0
+        self.hflip = False
+        self.vflip = False
+        self.jpeg_quality = 20
+        self.saturation = 0
+        self.bw = 0
+        # Sensor reset default: REG45[5:0]=0, AEC=0x33, REG04[1:0]=0.
+        self.aec_val = 204
+        # None keeps the resolution table's AEW/AEB/VV target. CIF uses a
+        # different target from SVGA/UXGA; an integer means user override.
+        self.auto_exposure = None
+        self.aec_enable = True
+        # DSP CTRL0 AEC_SEL is active-low: reset bit 0 means AEC2 enabled.
+        self.aec2_enable = True
+        self.agc_enable = True
+        # COM9=0x48 in OV2640_JPEG_INIT: bits 7:5 are ceiling index 2 (8x).
+        self.agc_ceiling = 2
+        self.agc_value = 0
+        self.wb_mode = 0
+        self.special_effect = 0
+        self.awb_mode = True
+        self.awb_mode_gain = True
+        self.lens_correction = False
+        self.wpc = True
+        self.bpc = True
+        self.color_bar = False
+        
         # No ESR
         self._init_gate()
         self._init_dma()

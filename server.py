@@ -82,7 +82,7 @@ class CommandServer:
         except Exception as e:
             raise e
            
-        self.handle_message(data)
+        self.handle_message(data, addr)
         
             
 #     @micropython.native()      
@@ -144,7 +144,7 @@ class CommandServer:
 #             await self._await_message()
 #             self.log("Connection Lost. Connect to Command Server again")
 #           
-    def handle_message(self, msg):
+    def handle_message(self, msg, addr=None):
         try:
             data = json.loads(msg)
         except ValueError:
@@ -153,6 +153,14 @@ class CommandServer:
         except Exception as e:
             raise e
         
+        # A desktop client uses this lightweight handshake to discover the
+        # camera's live values.  Build the reply only when requested so the
+        # board does not keep a second settings dictionary in RAM.
+        if data.get("connection") is True:
+            if addr is not None:
+                self._send_settings(addr)
+            return
+
         for key, value in data.items():
             # name = "set_" + key
             # func = self.camera_call(name)
@@ -168,6 +176,39 @@ class CommandServer:
                     # func(value)
                     func(self.camera, value)
                     
+        gc.collect()
+
+    def _send_settings(self, addr):
+        camera = self.camera
+        settings_data = {
+            "resolution": camera.resolution,
+            "brightness": camera.brightness,
+            "contrast": camera.contrast,
+            "vertical_flip": camera.vflip,
+            "horizontal_flip": camera.hflip,
+            "jpeg_quality": camera.jpeg_quality,
+            "saturation": camera.saturation,
+            "black_white": camera.bw,
+            "auto_exposure": camera.auto_exposure,
+            "AEC_value": camera.aec_val,
+            "AEC": camera.aec_enable,
+            "AEC2": camera.aec2_enable,
+            "auto_gain": camera.agc_enable,
+            "agc_ceiling": camera.agc_ceiling,
+            "agc_value": camera.agc_value,
+            "wb_mode": camera.wb_mode,
+            "awb_mode": camera.awb_mode,
+            "awb_mode_gain": camera.awb_mode_gain,
+            "lens_correction": camera.lens_correction,
+            "wpc": camera.wpc,
+            "bpc": camera.bpc,
+            "special_effect": camera.special_effect,
+            "color_bar": camera.color_bar,
+        }
+        wire = json.dumps({"connection": True, "settings": settings_data})
+        self.sock.sendto(wire.encode("utf-8"), addr)
+        settings_data = None
+        wire = None
         gc.collect()
     
     def camera_call(self, name):
