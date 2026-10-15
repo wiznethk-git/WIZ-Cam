@@ -120,6 +120,7 @@ class Camera:
         
         # Settings
         self.resolution = 0
+        # UI percentage; 50 maps to the sensor's neutral raw value 0x20.
         self.brightness = 0
         self.contrast = 0
         self.hflip = False
