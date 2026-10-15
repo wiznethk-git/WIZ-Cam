@@ -106,6 +106,13 @@ def set_resolution(camera, h, w):
     camera.write_table(table)
     camera.write_table(OV2640_SYS_INIT)
     camera.resolution = (h, w)
+
+    # The shared exposure-level table is too dark for CIF below its brightest
+    # entry.  Make +2 the saved CIF level before restoring settings so the
+    # sensor and the desktop UI both report the value that is actually used.
+    if (h, w) in ((320, 240), (176, 144)):
+        camera.auto_exposure = 2
+
     _apply_saved_settings(camera)
 
 

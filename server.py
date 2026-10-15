@@ -175,7 +175,13 @@ class CommandServer:
                 else:
                     # func(value)
                     func(self.camera, value)
-                    
+
+        # Return the authoritative state after applying a command.  This is
+        # especially important when a resolution table forces another value,
+        # such as CIF selecting auto-exposure level +2.
+        if addr is not None:
+            self._send_settings(addr)
+
         gc.collect()
 
     def _send_settings(self, addr):
