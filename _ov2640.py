@@ -569,9 +569,7 @@ class Camera:
         ).encode()
         frame_count = 0
         while True:
-            t0 = time.ticks_us()
             gc.collect()
-            self.benchmark.append(time.ticks_diff(time.ticks_us(), t0))
             frame_complete = False
             section = 1
             q = self.max_size // 4
@@ -582,7 +580,6 @@ class Camera:
             
             # Synchronise to new frame
             self._wait_vsync()
-           
             header_complete = False
             # Start draining a fame     
             while not frame_complete:
