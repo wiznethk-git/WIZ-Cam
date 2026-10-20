@@ -348,11 +348,13 @@ class Camera:
         cnt[0] = 0
         sr[0] &= ~1 
         ccr[0] = DMA_CONFIG | 1
+        
+        dier[0] |= _DMA_CH_ENABLE
 
         while (int(idr[0]) & (1 << 5)) == 0:
             pass
         
-        dier[0] |= _DMA_CH_ENABLE
+        
 
     @micropython.viper()
     def count_href_rising_edges(self, spin_limit: int = 10000000) -> int:
@@ -569,17 +571,13 @@ class Camera:
         ).encode()
         frame_count = 0
         while True:
-            gc.collect()
             frame_complete = False
             section = 1
             q = self.max_size // 4
-                
-            # print("GC Collect time:", time.ticks_diff(time.ticks_us(), t_gc))
-            # t1 = time.ticks_us()
-            
             
             # Synchronise to new frame
             self._wait_vsync()
+            gc.collect()
             header_complete = False
             # Start draining a fame     
             while not frame_complete:

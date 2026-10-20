@@ -55,10 +55,10 @@ cam.write_table(OV2640_JPEG)
 # Resolution Init
 # cam.write_table(OV2640_CIF_176X144)
 # cam.write_table(OV2640_CIF_320X240)
-# cam.write_table(OV2640_SVGA_800X600)
+cam.write_table(OV2640_SVGA_800X600)
 # cam.write_table(OV2640_VGA_640X480)
 # cam.write_table(OV2640_UXGA_1024X768)
-cam.write_table(OV2640_UXGA_1280X960)
+# cam.write_table(OV2640_UXGA_1280X960)
 
 # Apply common sensor/DVP timing after the selected resolution.
 cam.write_table(OV2640_SYS_INIT)

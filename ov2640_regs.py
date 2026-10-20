@@ -209,7 +209,7 @@ OV2640_UXGA_1024X768 = (
 
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x16'
+    b'\xD3\x18'
     b'\xE0\x04'
     b'\xC0\xC8'
     b'\xC1\x96'
@@ -264,7 +264,7 @@ OV2640_CIF_320X240 = (
 
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x12'
+    b'\xD3\x18'
     b'\xE0\x04'
     b'\xC0\x32'
     b'\xC1\x25'
