@@ -91,7 +91,7 @@ while True:
         cam.stream_start(conn)
         # cam.stream_frame(conn)
         gc.collect()
-        cam.stream_frame_with_settings(conn, server, 20)
+        cam.stream_frame_with_settings(conn, server)
 
       
         # asyncio.run(asyncio.gather(server.run(),cam.async_stream_frame(conn)))
