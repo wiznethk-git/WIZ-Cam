@@ -1,5 +1,9 @@
 # WIZ-Cam
 
+<p align="center">
+  <img src="rsc/WIZ-Cam.png" alt="WIZ-Cam">
+</p>
+
 WIZ-Cam is MicroPython-powered board running on **W55MH32**  with an **OV2640** sensor and an
 **ICS-43434** I2S microphone. Video is captured straight off the sensor's DVP bus into RAM by DMA and sent out
 over Ethernet through the chip's built-in W5500 TCP/IP core, either as an **HTTP MJPEG stream** or as **RTSP/RTP with
@@ -123,6 +127,8 @@ because WSL2 NATs outbound TCP, but the returning UDP arrives at the Windows hos
 {"jpeg_quality": 12}
 {"brightness": 1, "contrast": -1}
 ```
+
+GUI is provided on `rsc/WIZ-Cam Config Tools V2.exe`
 
 The full set of keys is the dictionary at the top of `lib/server.py`: brightness, contrast, resolution, flips,
 jpeg_quality, saturation, black_white, the exposure and gain controls, white balance, lens correction, special
