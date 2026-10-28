@@ -25,7 +25,17 @@ def SetUpWiznetChip(DHCP = DHCP):
     
     # Reset the WIZnet chip
     nic.active(True)
-    nic.setsockbuf((4,4,4,4,0,0,0,0), "tx")
+    
+    # RTSP
+    # Socket 0 is UDP and RTSP Command Server
+    # Socket 1 + 2 is Video and Audio
+    # Socket 3 is for RTSP
+    # Socket 4 - 7 for remainig RTP
+    
+    # HTTP
+    # Socket 0 is UDP
+    # Socket 1, 2 is for HTTP Stream (Once close use the other)
+    nic.setsockbuf((1,4,4,2,1,1,1,1), "tx")
     
     
     # Please use your PC to Ping "192.168.1.20"

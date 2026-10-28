@@ -18,13 +18,13 @@ OV2640_SYS_INIT = (
     b'\x2C\xFF'
     b'\x2E\xDF'
     b'\x00\x00'
-
-    
+  
     # Sensor bank: internal clock doubler/divider and frame-length adjustment
     b'\xFF\x01'
     b'\x11\x80'
     b'\x2B\x00'
     b'\x46\x55'
+    
 )
 
 
@@ -62,7 +62,7 @@ OV2640_SVGA_800X600 = (
     b'\x4C\x00'
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x12'
+    b'\xD3\x16'
     b'\xE0\x04'
     b'\xC0\x64'
     b'\xC1\x4B'
@@ -113,7 +113,7 @@ OV2640_VGA_640X480 = (
     b'\x4C\x00'
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x14'
+    b'\xD3\x24'
     b'\xE0\x04'
     b'\xC0\x64'
     b'\xC1\x4B'
@@ -161,7 +161,7 @@ OV2640_UXGA_1280X960 = (
 
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x18'
+    b'\xD3\x14'
     b'\xE0\x04'
     b'\xC0\xC8'
     b'\xC1\x96'
@@ -264,7 +264,7 @@ OV2640_CIF_320X240 = (
 
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x18'
+    b'\xD3\x20'
     b'\xE0\x04'
     b'\xC0\x32'
     b'\xC1\x25'
@@ -319,7 +319,7 @@ OV2640_CIF_176X144 = (
 
     # DSP bank
     b'\xFF\x00'
-    b'\xD3\x12'
+    b'\xD3\x18'
     b'\xE0\x04'
     b'\xC0\x32'
     b'\xC1\x25'

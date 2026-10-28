@@ -30,6 +30,7 @@ PORT = const(80)
 sock = None
 
 nic = SetUpWiznetChip()
+nic.setsockbuf((1,4,4,0,0,0,0,0), 'tx')
 # Set four sockets so that can reconnect.
 print(nic.getsockbuf())
 
@@ -37,7 +38,7 @@ Camera = load_driver(DRIVER)
 cam = Camera(
     scl = Pin('PB6', Pin.IN),
     sda = Pin('PB7', Pin.IN),
-    max_size = 28000
+    max_size = 16000
 )
 
 
@@ -70,11 +71,10 @@ while True:
         sock.setblocking(True)
         conn, addr = sock.accept()
         sock = None
-        
+
+    
         # conn.setblocking(False)
         conn.settimeout(5000)
-
-
 
         # Extra settings
         # Table 00

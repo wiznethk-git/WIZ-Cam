@@ -147,11 +147,14 @@ class CommandServer:
     def handle_message(self, msg, addr=None):
         try:
             data = json.loads(msg)
+            if not isinstance(data, dict):
+                raise ValueError
         except ValueError:
-            self.log("Message expects to be in json format.")
+            self.log("Message expects to be in dictionary format.")
             return
         except Exception as e:
-            raise e
+            print(e)
+            return
         
         # A desktop client uses this lightweight handshake to discover the
         # camera's live values.  Build the reply only when requested so the

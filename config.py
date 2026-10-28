@@ -2,6 +2,8 @@
 DRIVER = "ov2640"
 MODE   = "svga"
 
+DEBUG = False
+
 # Network
 DHCP     = False
 NET_IP   = "192.168.1.13"
@@ -13,3 +15,6 @@ SERVER_PORT = 5000
 
 # Return
 START_ON_REPL = True
+
+# Transport: 0 = HTTP MJPEG stream, 1 = RTSP/RTP (video on 6100, audio on 6102)
+CAM_TYPE = 0

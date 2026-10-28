@@ -1,10 +1,15 @@
 import time
 import gc
 import micropython
+import struct
 from random import getrandbits
 from uctypes import addressof
 from machine import SoftI2C, Pin, mem32, Timer
 from ov2640_regs import *
+try:
+    from config import DEBUG
+except ImportError:
+    DEBUG = False
 
 # Pins
 _SCL, _SDA = Pin('PB6', Pin.IN), Pin('PB7', Pin.IN)
@@ -63,6 +68,14 @@ _DMA_TEIF = const(1 << (_DMA_SHIFT + 3))
 
 # Stream 
 _STREAM_BOUNDARY = f"W55MH32IPStream{getrandbits(32)}"
+
+# RTSP
+_SSRC = getrandbits(32)   # fixed, any 32-bit number
+_PAYLOAD = const(1452)      # scan bytes per packet. 20 (RTP + JPEG main header) + 1452 = a 1472 byte UDP payload,
+                            # which is the most that fits one Ethernet frame (1500 - 20 IP - 8 UDP) without IP
+                            # fragmentation. The first packet of a frame spends 132 of these on the quant tables.
+_HDR_BYTES = const(1024)    # wait for this many bytes before parsing the JPEG header (OV2640 header < 800 bytes)
+_VSYNC_IDR = const(0x40011008)  # GPIOC IDR, VSYNC = PC5, high while the frame data is coming out
 
 #Debug
 DMA_CONFIG = const(
@@ -504,50 +517,6 @@ class Camera:
                 dier[0] &= ~int(_DMA_CH_ENABLE)
                 ccr[0] &= ~1
                 return 0
-        
-   
-#     @micropython.native()
-#     def stream_frame(self, sock):
-#         header = (
-#             f"--{_STREAM_BOUNDARY}\r\n"
-#             "Content-Type: image/jpeg\r\n"
-#             "\r\n"
-#         ).encode()
-#         
-#         while True:
-#             gc.collect()
-#             sock.write(header)
-#             
-#             # Synchronise to new frame
-#             self._wait_vsync()
-#             
-#             frame_complete = False
-#             section = 1
-# 
-#             q = self.max_size // 4
-#             # Start draining a fame
-# 
-#             while not frame_complete:
-#                 result = self._drain_image(section)
-#                 # Select section[x] frame
-#                 if result == 1:
-#                     # Normal write
-#                     start = (section - 1) * q
-#                     end = section * q
-#                     self._write_all(sock, self.mv[start:end])
-#                     section += 1
-#                 elif result == 2:
-#                     self._write_all(sock, self.mv[3*q:4*q])
-#                     section = 1
-#                 else:
-#                     # Frame ended
-#                     start = (section - 1) * q
-#                     end = self.max_size - mem32[_DMA_CNDTR]
-#                     if end > start:
-#                         self._write_all(sock, self.mv[start:end])
-#                     frame_complete = True
-#             sock.write(b'\r\n')    
-
     # Sockets
     @micropython.native()
     def _write_all(self, sock, data):
@@ -595,8 +564,9 @@ class Camera:
                             if not found: 
                                 # Simulate drop frame use frame_count % 2 == 0 should get fps 13
                                 # Drop Frame
-                                year, month, day, hour, minute, second, _, _ = time.localtime()
-                                print(f"Dropped frame at {hour:02d}:{minute:02d}:{second:02d}")
+                                if DEBUG:
+                                    year, month, day, hour, minute, second, _, _ = time.localtime()
+                                    print(f"Dropped frame at {hour:02d}:{minute:02d}:{second:02d}")
                                 self.dropped_frames += 1
                                 frame_complete = True
                                 break
@@ -686,3 +656,336 @@ class Camera:
             msg = msg.decode("utf-8")
         print("[Camera]" +msg)
             
+class RTSPCamera(Camera):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rtp_seq = 0
+        self.rtp_ts = 0
+        self.rtp_off = 0
+        self.jtype = 0
+        self.w8 = 0
+        self.h8 = 0
+        self.scan_start = 0
+        self.qhdr = b""
+        self.pkt = bytearray(20 + 132 + _PAYLOAD)   # header + quant tables + the largest payload
+        self.pkt_mv = memoryview(self.pkt)
+        self.jhdr = 0
+        self.lapped = 0                                 # frames cut short because the DMA overwrote unsent data
+        self.t_send = 0                                 # DEBUG: us spent inside send() since the last print
+        self.t_build = 0                                # DEBUG: us spent inside _build_pkt() since the last print
+        self.n_pkt = 0                                  # DEBUG: video packets since the last print
+        self.gap = 0                                    # DEBUG: longest gap between two loop iterations, us
+        self.gap_send = 0                               # DEBUG: longest single send(), us
+        self.gap_aud = 0                                # DEBUG: longest single _service_audio(), us
+        self.wraps = 0                                  # DMA ring wraps in the current frame (see _dma_total)
+        self.peak = 0                                   # largest backlog (bytes written but not yet sent) since the last print
+
+        # Header bytes that never change for the whole session, so _hdr() does not rewrite them per packet
+        self.pkt[0] = 0x80                              # RTP version 2
+        self.pkt[12] = 0                                # type-specific, always 0 for this payload
+        struct.pack_into(">I", self.pkt, 8, _SSRC)      # SSRC, fixed once
+
+    # ---------------------------------------------------------------------------------------------------------------
+    # Packet-at-a-time RTP streaming.
+    #
+    # The DMA writes the frame into the ring as one continuous stream: stream position p is at self.buf[p % max_size].
+    # Instead of waiting for a whole section, we send one packet as soon as more than one packet of data is waiting,
+    # so the sender runs at the sensor's pace and never sends a short packet in the middle of a frame.
+    #
+    #   total = bytes the DMA has written this frame  (counted with ring wraps, so it never goes back)
+    #   sent  = stream position of the next byte to send
+    #   The byte at position p is overwritten when total reaches p + max_size. So a packet copied from [sent, sent+size)
+    #   is intact if, AFTER the copy, total - sent < max_size. That check is exact: no guessing with % any more.
+    # ---------------------------------------------------------------------------------------------------------------
+
+    @micropython.viper()
+    def _dma_total(self) -> int:
+        # Bytes written by the DMA since _wait_vsync armed it. Read CNDTR BEFORE the wrap flag: if the wrap happens
+        # between the two reads we see the flag, count it and read CNDTR again, so the result is never a ring too low.
+        isr = ptr32(_DMA_ISR)
+        ifcr = ptr32(_DMA_IFCR)
+        cndtr = ptr32(_DMA_CNDTR)
+        n = int(self.max_size)
+        wraps = int(self.wraps)
+        c = cndtr[0]
+        if isr[0] & int(_DMA_TCIF):
+            ifcr[0] = int(_DMA_TCIF)
+            wraps += 1
+            self.wraps = wraps
+            c = cndtr[0]
+        return wraps * n + (n - c)
+
+    @micropython.viper()
+    def _frame_end(self) -> int:
+        # 1 once VSYNC is low (frame data finished). Stops the timer DMA request and the DMA, like _drain_image does.
+        gpio = ptr32(_VSYNC_IDR)
+        if (int(gpio[0]) & (1 << 5)) == 0:
+            dier = ptr32(_TIMER_DIER)
+            ccr = ptr32(_DMA_CCR)
+            dier[0] &= ~int(_DMA_CH_ENABLE)
+            ccr[0] &= ~1
+            return 1
+        return 0
+
+    @micropython.viper()
+    def _hdr(self, last: int) -> int:
+        # Writes only the header bytes that change from packet to packet and returns the extra bytes the payload is
+        # pushed back by (132 for the quantization table header on the first packet of a frame, else 0).
+        # Bytes 0, 8-11 (SSRC) and 12 are written once in __init__; 4-7 (timestamp) and 16-19 (type/Q/w/h) once per
+        # frame in _hdr_frame(). struct.pack_into() had to re-parse its format string on every packet.
+        pkt = ptr8(self.pkt)
+        seq = int(self.rtp_seq)
+        off = int(self.rtp_off)
+        if last != 0:
+            pkt[1] = 0x9A                               # payload type 26 + marker bit: last packet of the frame
+        else:
+            pkt[1] = 0x1A
+        pkt[2] = (seq >> 8) & 0xFF                      # sequence number, 16 bit
+        pkt[3] = seq & 0xFF
+        pkt[13] = (off >> 16) & 0xFF                    # fragment offset into the scan data, 24 bit
+        pkt[14] = (off >> 8) & 0xFF
+        pkt[15] = off & 0xFF
+        if off == 0:
+            return 132
+        return 0
+
+    def _hdr_frame(self):
+        # Header fields that change once per frame, not per packet: timestamp and type/Q/width/height.
+        struct.pack_into(">I", self.pkt, 4, self.rtp_ts)
+        struct.pack_into(">I", self.pkt, 16, self.jhdr)
+
+    @micropython.native()
+    def _build_pkt(self, pos, size, last):
+        # Builds one RTP/JPEG packet from stream position pos into self.pkt. Returns the packet length.
+        # The payload stays a slice assignment (memcpy): copying byte by byte in viper measured 3-4x slower.
+        # The payload may cross the end of the ring, then it is copied in two parts.
+        extra = self._hdr(1 if last else 0)
+        if extra:
+            # Once per frame. pack_into pads if qhdr is shorter than 132, a viper loop would read past its end.
+            struct.pack_into("132s", self.pkt, 20, self.qhdr)
+        mv = self.pkt_mv
+        ring = self.mv
+        n = self.max_size
+        o = 20 + extra
+        i = pos % n
+        first = n - i
+        if first >= size:
+            mv[o:o + size] = ring[i:i + size]
+        else:
+            mv[o:o + first] = ring[i:n]
+            mv[o + first:o + size] = ring[0:size - first]
+        return o + size
+
+    def _close_frame(self, send):
+        # Ends a frame that was cut short: one marker packet with an EOI (FF D9) at the current offset, so the player
+        # closes the frame instead of gluing it to the next one. The part already sent was intact (checked per packet).
+        if self.rtp_off == 0:                           # nothing sent yet: the player has no frame to close
+            return
+        struct.pack_into(">HHIIII", self.pkt, 0, 0x809A,
+                         self.rtp_seq & 0xFFFF, self.rtp_ts, _SSRC, self.rtp_off, self.jhdr)
+        self.pkt[20] = 0xFF
+        self.pkt[21] = 0xD9
+        send(self.pkt_mv[:22])
+        self.rtp_seq += 1
+
+    @micropython.native()
+    def _rtp_frame(self, mic, rtsp):
+        # Sends one frame. Returns 0 = sent, 1 = dropped (no JPEG start), 2 = cut short (DMA overwrote unsent data).
+        # Audio is served only while less than one packet of video is waiting, so it never builds up a video backlog.
+        n = self.max_size
+        buf = self.buf
+        send = rtsp.send_rtp
+        dbg = DEBUG                                     # local: the loop must not read a global per packet
+        us = time.ticks_us
+        df = time.ticks_diff
+        sent = 0
+        header = False
+        ended = False
+        peak = self.peak
+        gap = self.gap
+        tprev = us()
+        while True:
+            if dbg:                                     # longest stall between two iterations: finds anything that
+                t = us()                                # blocks the loop (a print, gc, server.poll) long enough for
+                g = df(t, tprev)                        # the DMA to overrun the ring
+                tprev = t
+                if g > gap:
+                    gap = g
+            if not ended and self._frame_end():
+                ended = True
+            total = self._dma_total()
+
+            if not header:
+                if total >= 2 and (buf[0] != 0xFF or buf[1] != 0xD8):
+                    return 1
+                if total < _HDR_BYTES and not ended:
+                    mic._service_audio(rtsp, 1)         # idle: the JPEG header is still arriving
+                    continue
+                if total < 2:
+                    return 1
+                self.parse_jpeg_header()
+                self.rtp_ts = (time.ticks_ms() * 90) & 0xFFFFFFFF
+                self.rtp_off = 0
+                self._hdr_frame()                       # timestamp and type/Q/w/h: once per frame, not per packet
+                sent = self.scan_start                  # the JPEG header itself is not sent (Q = 255 sends the tables)
+                header = True
+
+            avail = total - sent
+            if avail > peak:
+                peak = avail
+            cap = _PAYLOAD - 132 if self.rtp_off == 0 else _PAYLOAD
+
+            # Send a full packet only while MORE than one packet is waiting, so the last packet of the frame always
+            # has at least one byte and can carry the marker bit.
+            if avail > cap or (ended and avail > 0):
+                size = cap if avail > cap else avail
+                last = ended and size == avail
+                if dbg:
+                    t0 = us()
+                    length = self._build_pkt(sent, size, last)
+                    t1 = us()
+                    self.t_build += df(t1, t0)
+                else:
+                    length = self._build_pkt(sent, size, last)
+                if self._dma_total() - sent >= n:       # the DMA overwrote part of what we just copied
+                    self.lapped += 1
+                    self._close_frame(send)
+                    self.peak = peak
+                    self.gap = gap
+                    return 2
+                if dbg:
+                    t0 = us()
+                    send(self.pkt_mv[:length])
+                    g = df(us(), t0)
+                    self.t_send += g
+                    self.n_pkt += 1
+                    if g > self.gap_send:
+                        self.gap_send = g
+                else:
+                    send(self.pkt_mv[:length])
+                self.rtp_off += size
+                self.rtp_seq = (self.rtp_seq + 1) & 0xFFFF   # kept in range: _hdr() reads it as a viper int
+                sent += size
+                if last:
+                    self.peak = peak
+                    self.gap = gap
+                    return 0
+            elif ended:                                 # frame ended with no scan data left to send
+                self._close_frame(send)
+                self.peak = peak
+                self.gap = gap
+                return 0
+            elif dbg:                                   # idle: less than one packet of video waiting
+                t0 = us()
+                mic._service_audio(rtsp, 1)
+                g = df(us(), t0)
+                if g > self.gap_aud:
+                    self.gap_aud = g
+            else:
+                mic._service_audio(rtsp, 1)
+
+    def stream_rtp(self, mic, rtsp, server, frame = None):
+        t_start = time.ticks_ms()
+        frame_count = 0
+        self.lapped = 0
+        self.dropped_frames = 0
+        self.peak = 0
+        mic.start()
+        while rtsp.playing:
+            self.wraps = 0
+            self._wait_vsync()                          # arms the DMA at buf[0], returns when the frame starts
+            gc.collect()                                # the ring is still almost empty, so this costs no backlog
+            r = self._rtp_frame(mic, rtsp)
+            if r == 1:
+                self.dropped_frames += 1                # counted, printed every 100 frames (no print in the loop)
+                continue
+            frame_count += 1
+            mic._service_audio(rtsp, 2)                 # between frames, before the next VSYNC
+
+            if frame is not None and frame_count > frame:
+                return
+            if DEBUG and frame_count % 100 == 0:
+                tdiff = time.ticks_diff(time.ticks_ms(), t_start)
+                k = self.n_pkt if self.n_pkt else 1
+                print("FPS = %.1f  frames %d  cut short %d  dropped %d  backlog peak %d of %d  free %d" %
+                      (frame_count * 1000 / tdiff, frame_count, self.lapped, self.dropped_frames,
+                       self.peak, self.max_size, gc.mem_free()))
+                print("   %d pkts, %.1f/frame: send %d us  build %d us  total %d us per packet" %
+                      (self.n_pkt, self.n_pkt / 100, self.t_send // k, self.t_build // k,
+                       (self.t_send + self.t_build) // k))
+                print("   longest: loop stall %d us  one send %d us  one audio call %d us" %
+                      (self.gap, self.gap_send, self.gap_aud))
+                self.peak = 0
+                self.gap = 0
+                self.gap_send = 0
+                self.gap_aud = 0
+                self.t_send = 0
+                self.t_build = 0
+                self.n_pkt = 0
+            if frame_count % 8 == 0:
+                # See any configuration updates on each end-frame
+                server.poll()
+
+                # Check RTSP has new command or not
+                if rtsp.conn is not None:
+                    rtsp.run()
+
+                
+    def parse_jpeg_header(self):
+        buf = self.buf
+        i = 2                                           # skip FF D8
+        self.qhdr = b"\x00\x00\x00\x80"
+        
+        # OV2640 JPEG header Safety limit 
+        while i < 800:
+            marker = buf[i + 1]
+            length = (buf[i + 2] << 8) | buf[i + 3]
+            if marker == 0xDB:                          # quantization tables
+                j = i + 4
+                while j < i + 2 + length:
+                    self.qhdr += buf[j + 1:j + 65]
+                    j += 65
+            elif marker == 0xC0:                        # frame header
+                self.h8 = ((buf[i + 5] << 8) | buf[i + 6]) // 8
+                self.w8 = ((buf[i + 7] << 8) | buf[i + 8]) // 8
+                self.jtype = 0 if buf[i + 11] == 0x21 else 1
+            elif marker == 0xDA:                        # picture data starts after this
+                self.scan_start = i + 2 + length
+                break
+            i += 2 + length
+        # JPEG header bytes 16-19 (type, Q=255, w/8, h/8) as one 32-bit word for _send_rtp
+        self.jhdr = (self.jtype << 24) | (255 << 16) | (self.w8 << 8) | self.h8
+
+    @micropython.native()
+    def _send_rtp(self, rtsp, data, start=0, last=False):
+        
+        # data : one section (memoryview)
+        # start: bytes to skip at the front of data (scan_start in the first section)
+        # base : where data[0] sits inside self.buf (0, q, 2*q, 3*q, or 'start' for the tail)
+        pkt, mv = self.pkt, self.pkt_mv
+        n, pos = len(data), start
+#         t = time.ticks_us()
+        ts = 0                                          # MEASURE: time spent inside send_rtp only
+        pk = 0                                          # MEASURE: packets sent in this call
+        while pos < n:
+            extra = 0
+            if self.rtp_off == 0:                  # first packet of the frame
+                struct.pack_into("132s", pkt, 20, self.qhdr)
+                extra = 132
+            size = min(1400 - extra, n - pos)
+            end = last and pos + size >= n
+            # 20-byte header in one call: ver/PT, seq, timestamp, SSRC, (type-specific 0 + 24-bit offset), (type, Q, w/8, h/8)
+            struct.pack_into(">HHIIII", pkt, 0, 0x809A if end else 0x801A,
+                             self.rtp_seq & 0xFFFF, self.rtp_ts, _SSRC, self.rtp_off, self.jhdr)
+            offset = 20 + extra
+            mv[offset:offset + size] = data[pos: pos + size]
+#             t1 = time.ticks_us()                        # MEASURE
+            rtsp.send_rtp(mv[:offset + size])
+#             ts += time.ticks_diff(time.ticks_us(), t1)  # MEASURE
+            pk += 1                                     # MEASURE
+            self.rtp_off += size
+            self.rtp_seq += 1
+            pos += size
+        # MEASURE: total / send_rtp only / packets / bytes in section / skipped bytes / last flag
+#         print("Section time:", time.ticks_diff(time.ticks_us(), t), "send:", ts, "pkts:", pk, "n:", n, "start:", start, "last:", last)
+
