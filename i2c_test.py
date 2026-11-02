@@ -38,7 +38,7 @@ Camera = load_driver(DRIVER)
 cam = Camera(
     scl = Pin('PB6', Pin.IN),
     sda = Pin('PB7', Pin.IN),
-    max_size = 16000
+    max_size = 8400
 )
 
 

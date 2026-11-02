@@ -30,12 +30,14 @@ def SetUpWiznetChip(DHCP = DHCP):
     # Socket 0 is UDP and RTSP Command Server
     # Socket 1 + 2 is Video and Audio
     # Socket 3 is for RTSP
-    # Socket 4 - 7 for remainig RTP
+    # Socket 4 is for audio UDP
+    # Socket 3, 5, 6, 7 are rehandshake with RTSP
     
     # HTTP
     # Socket 0 is UDP
     # Socket 1, 2 is for HTTP Stream (Once close use the other)
-    nic.setsockbuf((1,4,4,2,1,1,1,1), "tx")
+    nic.setsockbuf((1, 4, 4, 2, 1, 1, 1, 1), "tx")
+    nic.setsockbuf((2, 1, 1, 1, 8, 1, 1, 1), "rx")     
     
     
     # Please use your PC to Ping "192.168.1.20"

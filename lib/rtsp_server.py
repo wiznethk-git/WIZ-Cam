@@ -1,6 +1,7 @@
 import socket
 import gc
 import time
+import struct
 from machine import Pin
 
 _RTSP_PORT = const(554)
@@ -29,6 +30,9 @@ class RTSPServer:
         # Audio
         self.audio_sock = None
         self.audio_port = None
+
+        self.sr = bytearray(28)     # one RTCP sender report, reused
+        self.sr_mv = memoryview(self.sr)
     
         
         self.led = Pin('PG3', Pin.OUT)
@@ -217,6 +221,27 @@ class RTSPServer:
         self.audio_sock.sendto(pkt, (self.conn_ip[0], self.audio_port))
         self.led.value(1)
     
+    def send_sr(self, sock, port, ssrc, rtp_ts, pkts, octets, ntp_sec, ntp_frac):
+        # RTCP Sender Report (RFC 3550 6.4.1): 28 bytes, no report blocks.
+        #
+        # The pair (NTP time, RTP timestamp) is the entire point. An RTP timestamp on its own has an arbitrary
+        # origin and a per-stream clock rate, so a client may not assume audio ts 0 and video ts 0 are the same
+        # instant - which is why audio and video cannot be lined up without this. Repeating the report also
+        # lets the client measure each stream's TRUE clock rate, so an audio clock that is really 7997.63 Hz
+        # rather than the advertised 8000 stops drifting out of sync.
+        #
+        # The NTP epoch does not matter: clients only use differences, between the two streams and between
+        # successive reports. A monotonic local clock is enough, as long as both streams use the same one.
+        struct.pack_into(">BBHIIIIII", self.sr, 0,
+                         0x80,          # version 2, no padding, no report blocks
+                         200,           # payload type: SR
+                         6,             # length in 32-bit words, minus one
+                         ssrc, ntp_sec, ntp_frac, rtp_ts, pkts, octets)
+        try:
+            sock.sendto(self.sr_mv, (self.conn_ip[0], port + 1))    # RTCP sits on the RTP port + 1
+        except OSError:
+            pass                        # a lost report just delays the next correction
+
     def _init_rtp(self):
         sock0 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock0.bind((self.ip, _VIDEO_PORT))

@@ -671,6 +671,8 @@ class RTSPCamera(Camera):
         self.pkt_mv = memoryview(self.pkt)
         self.jhdr = 0
         self.lapped = 0                                 # frames cut short because the DMA overwrote unsent data
+        self.rtp_pkts = 0                               # totals for the RTCP sender report (rtp_seq is masked)
+        self.rtp_oct = 0
         self.t_send = 0                                 # DEBUG: us spent inside send() since the last print
         self.t_build = 0                                # DEBUG: us spent inside _build_pkt() since the last print
         self.n_pkt = 0                                  # DEBUG: video packets since the last print
@@ -833,6 +835,9 @@ class RTSPCamera(Camera):
             avail = total - sent
             if avail > peak:
                 peak = avail
+                
+            # If is header => Total frame bytes need to remove RCP header + frame header
+            # If not, Total fram bytes is remove RCP header ( _PAYLOAD already removed it)
             cap = _PAYLOAD - 132 if self.rtp_off == 0 else _PAYLOAD
 
             # Send a full packet only while MORE than one packet is waiting, so the last packet of the frame always
@@ -865,6 +870,8 @@ class RTSPCamera(Camera):
                     send(self.pkt_mv[:length])
                 self.rtp_off += size
                 self.rtp_seq = (self.rtp_seq + 1) & 0xFFFF   # kept in range: _hdr() reads it as a viper int
+                self.rtp_pkts += 1
+                self.rtp_oct += size
                 sent += size
                 if last:
                     self.peak = peak
@@ -884,12 +891,43 @@ class RTSPCamera(Camera):
             else:
                 mic._service_audio(rtsp, 1)
 
-    def stream_rtp(self, mic, rtsp, server, frame = None):
+    def _send_rtcp(self, rtsp, mic):
+        # One ticks_ms reading for both reports, so they describe the SAME instant. That is what ties the two
+        # streams to a common clock; without it a client can only guess, and the guess follows pipeline
+        # latency, which is why the offset changed with resolution.
+        ticks = time.ticks_ms()
+        sec = ticks // 1000
+        frac = (ticks % 1000) * 4294967             # one millisecond as a 32-bit fraction of a second
+        if rtsp.video_port:
+            rtsp.send_sr(rtsp.video_sock, rtsp.video_port, _SSRC,
+                         (ticks * 90) & 0xFFFFFFFF, self.rtp_pkts, self.rtp_oct, sec, frac)
+        if rtsp.audio_port:
+            # mic.ts, NOT ticks * 8. The capture timeline runs on the I2S clock, 7997.63 Hz rather than the
+            # advertised 8000, and reporting its real value is exactly what lets the client discover that and
+            # stop drifting. Recomputing it here would assert the clock is perfect - the original lie.
+            rtsp.send_sr(rtsp.audio_sock, rtsp.audio_port, mic.ssrc,
+                         mic.ts, mic.sent, mic.sent * 320, sec, frac)
+
+    def stream_rtp(self, rtsp, server, frame = None):
+        # The microphone comes from self.mic, not a parameter: the UDP command server can only reach objects
+        # through the camera, so the camera has to own it. Passing it in as well could let the two diverge.
+        mic = self.mic
         t_start = time.ticks_ms()
+        t_sr = t_start                              # when the last RTCP sender report went out
         frame_count = 0
         self.lapped = 0
         self.dropped_frames = 0
         self.peak = 0
+        # A previous session can end while the client was feeding us audio (TEARDOWN mid-playback, VLC killed,
+        # cable pulled), and nothing in that path turns the I2S block back around - mic.start() only resets
+        # counters and reads the capture DMA, it does not look at mic.mode. So the next PLAY would run with the
+        # block still facing the speaker and the RX DMA stopped, and _service_audio() would take the playback
+        # branch for the whole session: no microphone at all. to_mic() returns False straight away when already
+        # capturing, so this costs nothing in the normal case.
+        #
+        # It has to be here rather than inside start(): to_mic() calls start() itself and only sets mode = MIC
+        # at the end, so start() -> to_mic() -> start() would recurse until the stack ran out.
+        mic.to_mic()
         mic.start()
         while rtsp.playing:
             self.wraps = 0
@@ -900,7 +938,10 @@ class RTSPCamera(Camera):
                 self.dropped_frames += 1                # counted, printed every 100 frames (no print in the loop)
                 continue
             frame_count += 1
-            mic._service_audio(rtsp, 2)                 # between frames, before the next VSYNC
+            mic._service_audio(rtsp, 2, True)           # between frames, before the next VSYNC: the only
+                                                        # place the audio-in socket is drained
+            mic.report()                                # and its 3 s summary: printing here, in the vertical
+                                                        # blanking, costs no backlog
 
             if frame is not None and frame_count > frame:
                 return
@@ -922,6 +963,10 @@ class RTSPCamera(Camera):
                 self.t_send = 0
                 self.t_build = 0
                 self.n_pkt = 0
+            if time.ticks_diff(time.ticks_ms(), t_sr) >= 5000:
+                t_sr = time.ticks_ms()
+                self._send_rtcp(rtsp, mic)
+
             if frame_count % 8 == 0:
                 # See any configuration updates on each end-frame
                 server.poll()

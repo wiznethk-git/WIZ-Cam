@@ -418,3 +418,31 @@ def reset_sde(camera, reset):
 
 def send_grey(camera, reset = True):
     camera.grey = True
+
+def set_audio_mode(camera, mode):
+    """Pick the audio direction: 0 = microphone (streamed to the client), 1 = speaker (played on the device).
+
+    The board wires the microphone and the amplifier to the same I2S block, and an I2S block is receive or
+    transmit but never both, so the two are mutually exclusive and this switches between them.
+    """
+    if not isinstance(mode, int) or isinstance(mode, bool):
+        camera.log(
+            "Audio mode expects int 0 (mic) or 1 (speaker). Received {}: {}.".format(
+                type(mode), mode
+            )
+        )
+        return
+    if mode not in (0, 1):
+        camera.log("Audio mode can only be 0 (mic) or 1 (speaker). Received {}".format(mode))
+        return
+
+    mic = getattr(camera, "mic", None)
+    if mic is None:
+        camera.log("No microphone attached: set camera.mic before switching the audio direction.")
+        return
+
+    if mode:
+        mic.to_speaker()
+    else:
+        mic.to_mic()
+    camera.audio_mode = mode

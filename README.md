@@ -7,7 +7,8 @@
 WIZ-Cam is MicroPython-powered board running on **W55MH32**  with an **OV2640** sensor and an
 **ICS-43434** I2S microphone. Video is captured straight off the sensor's DVP bus into RAM by DMA and sent out
 over Ethernet through the chip's built-in W5500 TCP/IP core, either as an **HTTP MJPEG stream** or as **RTSP/RTP with
-audio**.
+audio**. Audio also runs the other way: a PC can stream PCM to the board and have it played through the on-board
+amplifier.
 
 Nothing here is a general-purpose library: the capture path drives TIM1, DMA1 and the GPIO ports directly, so the
 pin assignments and register addresses are specific to W55MH32.
@@ -29,14 +30,15 @@ OV2640
 - VSYNC on`PC5`
 - HREF on `PA8` (TIM1_CH1, used as the counter gate)
 - PCLK on `PA12` (TIM1_ETR),
-- D0-D7 on `PA0-PA7`. 
-
-Audio
+- D0-D7 on `PA0-PA7`
 - SCCB (I2C) on `PB6`/`PB7`
 
-<!-- The microphone and the amplifier share `PB3` (SCK), `PA15` (WS) and `PB5` (SD). The chip has only **one** I2S
-block, and an I2S block is receive *or* transmit, never both — so the microphone and the speaker cannot be live
-at the same time. -->
+Audio
+- SCK on `PB3`, WS on `PA15`, SD on `PB5`
+
+The microphone and the amplifier share those three pins. The chip has only **one** I2S block, and an I2S block is
+receive *or* transmit, never both — so the microphone and the speaker cannot be live at the same time. Switching
+between them is a runtime command, see [Audio playback](#audio-playback).
 
 ## Software
 ## Layout
@@ -51,7 +53,7 @@ lib/                    the modules, as source
   camera_setting.py       the sensor setting functions the UDP command server exposes
   ov2640_regs.py          generated register tables, per resolution
   ov2640_config.py        resolution name -> register table
-  mic.py                  ICS-43434 capture and RTP packetisation
+  mic.py                  ICS-43434 capture, RTP packetisation, and MAX98357A playback
   rtsp_server.py          RTSP handshake and the RTP sockets
   server.py               UDP command server for live setting changes
 *.mpy                   the same modules precompiled for the board
@@ -92,11 +94,12 @@ Only five keys are actually read:
 Ports are as follows:
 
 - HTTP: 80
-- RTSP: 554 
+- RTSP: 554
 - UDP : 5000
+- Audio in: 6000
 
-Leave `DEBUG = False` for normal use. The debug output is printed from inside the frame loop, and a print over
-USB costs milliseconds — long enough for the camera DMA to overrun the capture ring.
+Leave `DEBUG = False` for normal use. The reports are printed between frames, where they cost no capture
+backlog, but a print over USB still costs milliseconds.
 
 ---
 ### HTTP
@@ -119,6 +122,35 @@ Video is RTP/JPEG (RFC 2435, payload type 26) on port 6100; audio is 8 kHz mono 
 will simply fail. Note also that a client inside WSL cannot receive the RTP at all: the RTSP handshake works
 because WSL2 NATs outbound TCP, but the returning UDP arrives at the Windows host instead.
 
+### Audio playback
+
+The board can play audio sent to it instead of streaming its own. Because there is only one I2S block, this is a
+switch rather than an addition — turn it with the UDP command server:
+
+```
+{"audio": 1}    speaker: stop the microphone, play whatever arrives on port 6000
+{"audio": 0}    microphone: back to capturing and streaming audio out
+```
+
+While it is in speaker mode, send 322-byte UDP datagrams to port 6000:
+
+| offset | size | field |
+|---|---|---|
+| 0 | 2 | sequence number, `uint16` big endian |
+| 2 | 320 | 160 samples, `int16` big endian — 20 ms of 8 kHz mono |
+
+Send them at 50 per second and **keep sending through silence**. The board plays out of a 120 ms ring at a fixed
+rate and never waits, so a gap in the stream is a gap in the sound.
+
+The sequence number is what decides where a packet lands in that ring, so loss and reordering are handled by
+position rather than by arrival order — which is also why this is UDP. A packet that turns up after its slot has
+already been played is of no use and is dropped, and a retransmission would always be that late.
+
+The config tool has a `REC` button that does all of the above from your PC's microphone.
+
+Audio RTP keeps flowing to the RTSP client the whole time, carrying silence, so the client's audio clock does not
+stall while the speaker is live.
+
 ### UDP
 `server.py` listens on `SERVER_PORT` (UDP) and takes JSON, so the sensor can be retuned while streaming:
 
@@ -126,6 +158,7 @@ because WSL2 NATs outbound TCP, but the returning UDP arrives at the Windows hos
 {"resolution": [800, 600]}
 {"jpeg_quality": 12}
 {"brightness": 1, "contrast": -1}
+{"audio": 1}
 ```
 
 GUI is provided on `rsc/WIZ-Cam Config Tools V2.exe`
@@ -133,6 +166,13 @@ GUI is provided on `rsc/WIZ-Cam Config Tools V2.exe`
 The full set of keys is the dictionary at the top of `lib/server.py`: brightness, contrast, resolution, flips,
 jpeg_quality, saturation, black_white, the exposure and gain controls, white balance, lens correction, special
 effects and the colour bar.
+
+
+### Notes
+1) Current HTTP stream requires stable internet, therefore direct ethernet connection with your PC is preferred.
+To view the HTTP stream with DHCP, you may need make your client to be connected to the router through an Ethernet cable.
+
+
 
 
 

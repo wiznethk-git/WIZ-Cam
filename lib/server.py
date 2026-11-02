@@ -45,6 +45,7 @@ class CommandServer:
             "bpc": settings.set_bpc,
             "special_effect": settings.set_special_effect,
             "color_bar": settings.set_colorbar,
+            "audio": settings.set_audio_mode,
         }
         self._init_socket()
         print(f'For configuration server, please connect to {self.ip}:{self.port}')

@@ -10,6 +10,9 @@ from server import CommandServer
 from rtsp_server import RTSPServer
 from mic import Microphone
 
+# Set start light
+Pin('PG2', Pin.OUT).value(0)
+
 _HTTP_MODE = const(0)
 _RTSP_MODE = const(1)
 
@@ -34,7 +37,7 @@ gc.collect()
 
 # Main
 # Try opt level
-micropython.opt_level(3)
+micropython.opt_level(1)
 
 PORT = const(80)
 # Internet
@@ -155,9 +158,11 @@ if CAM_TYPE == _HTTP_MODE:
 else:
     # RTSP Server. CommandServer first, then RTSPServer, then its two RTP sockets: that order decides which
     # hardware socket each one gets, and so which TX buffer from setsockbuf() it uses.
-    mic = Microphone()
     server = CommandServer(nic.ifconfig()[0], cam)
     rtsp = RTSPServer(nic.ifconfig()[0])
+    
+    mic = Microphone()
+    cam.mic = mic               # the UDP command server only gets the camera, so reach the mic through it
     while True:
         try:
             # Handle RTSP
@@ -165,7 +170,7 @@ else:
                 rtsp.run()
                 time.sleep_ms(20)
             else:
-                cam.stream_rtp(mic, rtsp, server) 
+                cam.stream_rtp(rtsp, server) 
         except OSError as e:
             print(e)
             if server is not None:
@@ -176,8 +181,3 @@ else:
         except Exception as e:
             print("free:", gc.mem_free())
             raise e
-    
-    
-
-
-

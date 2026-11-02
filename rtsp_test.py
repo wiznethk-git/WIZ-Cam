@@ -35,6 +35,8 @@ PORT = const(554) # Default RTSP port
 sock = None
 
 nic = SetUpWiznetChip()
+nic.setsockbuf((1,4,4,2,1,1,1,1), 'tx')
+
 
 
 RTSPCamera = load_driver(DRIVER)
@@ -44,6 +46,7 @@ cam = RTSPCamera(
     max_size = 16000
 )
 mic = Microphone()
+cam.mic = mic               # the UDP command server only gets the camera, so reach the mic through it
 
 
 print(f"\nPlease connect to {nic.ifconfig()[0]}:{PORT} for the camera")
@@ -92,7 +95,7 @@ while True:
             rtsp.run()
             time.sleep_ms(20)
         else:
-            cam.stream_rtp(mic, rtsp, server) 
+            cam.stream_rtp(rtsp, server) 
     except OSError as e:
         print(e)
         if server is not None:
