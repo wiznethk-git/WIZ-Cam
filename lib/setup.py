@@ -1,20 +1,15 @@
 import network
 from machine import SPI, Pin
 try:
-    from config import DHCP
+    from config import DHCP, NET_IP , NET_SN ,NET_GW, NET_DNS 
 except ImportError:
     DHCP = False
-
-def SetUpWiznetChip(DHCP = DHCP):
     NET_IP   = "192.168.1.13"
     NET_SN   = "255.255.255.0"
     NET_GW   = "192.168.1.1"
     NET_DNS  = "8.8.8.8"
-#     NET_IP   = "10.0.1.151"
-#     NET_SN   = "255.255.255.0"
-#     NET_GW   = "10.0.1.254"
-#     NET_DNS  = "8.8.8.8"
 
+def SetUpWiznetChip(DHCP = DHCP):
     spi = SPI(2, baudrate=36_000_000, polarity=0, phase=0)
 
     cs  = Pin("PB12", Pin.OUT)

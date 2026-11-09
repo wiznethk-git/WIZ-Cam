@@ -11,7 +11,7 @@ from rtsp_server import RTSPServer
 from mic import Microphone
 
 # Set start light
-Pin('PG2', Pin.OUT).value(0)
+# Pin('PG3', Pin.OUT).value(0)
 
 _HTTP_MODE = const(0)
 _RTSP_MODE = const(1)

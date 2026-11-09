@@ -36,7 +36,7 @@ class RTSPServer:
     
         
         self.led = Pin('PG3', Pin.OUT)
-        self.led.value(0)
+        self.led.value(1)
         
         self.sdp = (
             b"v=0\r\n"
