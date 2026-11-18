@@ -4,6 +4,8 @@
   <img src="rsc/WIZ-Cam.png" alt="WIZ-Cam">
 </p>
 
+参考网站: https://docs.w5500.com/reference/wiz-cam.html
+
 WIZ-Cam 是一块基于 MicroPython 的开发板，运行在 **W55MH32** 上，搭载 **OV2640** 图像传感器和
 **ICS-43434** I2S 麦克风。视频由 DMA 直接从传感器的 DVP 总线采集到 RAM，再通过芯片内置的 W5500 TCP/IP
 核经以太网发送出去，可选择 **HTTP MJPEG 流** 或 **带音频的 RTSP/RTP**。音频也支持反向传输：PC 可以把 PCM
