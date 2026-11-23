@@ -16,9 +16,13 @@ except ImportError:
 
 
 class RTSPServer:
-    def __init__(self, ip, port = _RTSP_PORT):
+    def __init__(self, ip, port = _RTSP_PORT, idle = None):
         self.ip = ip
         self.port = port
+        # Called while no RTSP client is connected, e.g. CommandServer.poll, so JSON commands and S2E
+        # searches on 1460 are still answered. Set here, not after construction: __init__ ends by waiting
+        # for the first client in _init_socket().
+        self.idle = idle
         self.conn = None
         self.conn_ip = None
         self.session = str(_SESSION).encode()
@@ -70,12 +74,26 @@ class RTSPServer:
         if self.conn != None:
             return
         ip, port = self.ip, self.port
-        sock = socket.socket()
-        sock.bind((ip, port))
-        sock.listen(1)
-        sock.setblocking(True)
+        sock = None
         print(f"Please connect to {ip}:{port} for RTSP Server")
-        conn, client_ip = sock.accept()
+        # Accept with a 200 ms timeout; on each timeout do one idle poll, then wait again.
+        while True:
+            if sock is None:                        # (re)open the listener
+                sock = socket.socket()
+                sock.bind((ip, port))
+                sock.listen(1)
+                sock.settimeout(0.2)
+            try:
+                conn, client_ip = sock.accept()
+                break
+            except OSError as e:
+                # 11 / 110 / 116 are timeouts. Anything else means the listener died (upstream accept()
+                # closes it on SOCK_CLOSED), so rebuild it rather than polling a dead socket forever.
+                if e.errno not in (11, 110, 116):
+                    sock.close()
+                    sock = None
+            if self.idle is not None:
+                self.idle()
         sock.close()
         conn.setblocking(False)
         self.conn = conn

@@ -31,15 +31,16 @@ def SetUpWiznetChip(DHCP = DHCP):
     # HTTP
     # Socket 0 is UDP
     # Socket 1, 2 is for HTTP Stream (Once close use the other)
+
     nic.setsockbuf((1, 4, 4, 2, 1, 1, 1, 1), "tx")
-    nic.setsockbuf((2, 1, 1, 1, 8, 1, 1, 1), "rx")     
-    
+    nic.setsockbuf((2, 1, 1, 1, 8, 1, 1, 1), "rx")
     
     # Please use your PC to Ping "192.168.1.20"
     if DHCP:
         try:
             print('==== Assigning DHCP ====')
             nic.ifconfig("dhcp")
+            print("Use S2E Config Tool to check DHCP IP.")
         except Exception as e:
             print('==== Failure in DHCP. Try Static IP instead ====')
             print('IP at ', NET_IP)

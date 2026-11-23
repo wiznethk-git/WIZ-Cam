@@ -74,21 +74,29 @@ cam.write_table(OV2640_SVGA_800X600)
 cam.write_table(OV2640_SYS_INIT)
 
 print('\n')
-
+  
 
 # Start depends on config
 if CAM_TYPE == _HTTP_MODE:
     print(f"Please connect to {nic.ifconfig()[0]}:{PORT} for HTTP Stream")
-    server = CommandServer(nic.ifconfig()[0], cam)
+    server = CommandServer(nic, cam)
     while True:
         try:
 
             sock = socket.socket()
             sock.bind((nic.ifconfig()[0], PORT))
             sock.listen(0)
-            sock.setblocking(True)
-            
-            conn, addr = sock.accept()
+            sock.setblocking(False)
+            sock.settimeout(0.5)
+            accepted = False
+            while not accepted:
+                try:
+                    conn, addr = sock.accept()
+                    accepted = True
+                except OSError:
+                    server.poll()
+                    continue
+                        
             sock = None
 
             # conn.setblocking(False)
@@ -158,8 +166,8 @@ if CAM_TYPE == _HTTP_MODE:
 else:
     # RTSP Server. CommandServer first, then RTSPServer, then its two RTP sockets: that order decides which
     # hardware socket each one gets, and so which TX buffer from setsockbuf() it uses.
-    server = CommandServer(nic.ifconfig()[0], cam)
-    rtsp = RTSPServer(nic.ifconfig()[0])
+    server = CommandServer(nic, cam)
+    rtsp = RTSPServer(nic.ifconfig()[0], idle=server.poll)
     
     mic = Microphone()
     cam.mic = mic               # the UDP command server only gets the camera, so reach the mic through it
@@ -177,6 +185,9 @@ else:
                 server.disconnect()
             if e.errno not in [7, 128]:
                 raise e
+            continue
+        except RTSPReconnectionException:
+            server.poll()
             continue
         except Exception as e:
             print("free:", gc.mem_free())

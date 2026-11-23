@@ -4,11 +4,13 @@ import time
 # import asyncio
 import json
 import camera_setting as settings
+from setup import DHCP
 
-_CMD_PORT = 5000
+_CMD_PORT = 1460
 class CommandServer:
-    def __init__(self, ip, camera):
-        self.ip = ip
+    def __init__(self, nic, camera):
+        self.nic = nic
+        self.ip = nic.ifconfig()[0]
         self.port = _CMD_PORT
         self.conn = None
         self.client_ip = None
@@ -83,68 +85,11 @@ class CommandServer:
         except Exception as e:
             raise e
            
-        self.handle_message(data, addr)
+        if data[:1] == b"{": # JSON payload
+            self.handle_message(data, addr)
+        else:
+            self.handle_s2e(data, addr)
         
-            
-#     @micropython.native()      
-#     def _wait_message(self):
-#         try:
-#             msg = self.conn.recv(1024)
-#         except OSError as e:
-#             if not (e.errno in [11, 116]):
-#                 if self.conn:
-#                     self.conn.close()
-#                 self.conn = None
-#             return
-# 
-#         if not msg or msg == b"":
-#             # Maybe ended
-#             self.disconnect()
-#             return
-#         self.handle_message(msg)
-    
-#     @micropython.native()      
-#     async def _await_connection(self):
-#         if self.sock is None:
-#             self._init_socket()
-#         while self.conn is None:
-#             try:
-#                 self.conn, self.client_ip = self.sock.accept()
-#             except OSError as e:
-#                 if e.errno in [11, 116]:
-#                     await asyncio.sleep(1)
-#                     continue
-#             except Exception as e:
-#                 raise e
-#     
-#     @micropython.native()
-#     async def _await_message(self):
-#         while True:
-#             try:
-#                 msg = self.conn.recv(1024)
-#             except OSError as e:
-#                 if (e.errno in [11, 116]):
-#                     await asyncio.sleep(1)
-#                     continue
-#             if not msg:
-#                     break
-#             self.handle_message(msg)
-#         
-#         # Lost connection
-#         if self.conn is not None:
-#             self.conn.close()
-#         if self.sock is not None:
-#             self.sock.close()
-#         self.sock = None
-#         self.conn = None
-#     
-#     @micropython.native()
-#     async def run(self):
-#         while True:
-#             await self._await_connection()
-#             await self._await_message()
-#             self.log("Connection Lost. Connect to Command Server again")
-#           
     def handle_message(self, msg, addr=None):
         try:
             data = json.loads(msg)
@@ -229,14 +174,32 @@ class CommandServer:
             return None
         return func
         
-        
-#     @micropython.native()
-#     def poll(self):
-#         if self.conn is None:
-#             self._wait_connection()
-#             return
-#         self._wait_message()
-
+    
+    # ----------- S2E --------------
+    def handle_s2e(self, data, addr = None):
+        if data == b"SERH" and addr is not None:
+            self.sock.sendto(self._build_search(), addr)
+        else:
+            print(f"{data} is currently not supported.")
+    
+    def _build_search(self):
+        r = bytearray(200)
+        r[0:4] = b"SERH"
+        r[4:10] = self.nic.config("mac")
+        r[26] = 0x80 
+        r[27] = 1
+        r[29:39] = b"WIZ-Cam-V1"
+        r[45:52] = b"WIZ-Cam"
+        r[77] = 80
+        r[90] = 1 if DHCP else 0       # IP mode
+        ip, sub, gw, dns = self.nic.ifconfig()
+        for off, s in ((91, ip), (95, sub), (99, gw), (103, dns)):
+            r[off:off + 4] = bytes(int(x) for x in s.split("."))
+        r[192] = 1                          # run mode
+        return r
+    
+    
+    # ----------- End S2E ----------
     @micropython.native()
     def poll(self):
         self._wait_command()
